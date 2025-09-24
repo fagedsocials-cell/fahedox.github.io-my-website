@@ -318,7 +318,6 @@
             margin-top: 20px;
             word-break: break-all;
         }
-        
     </style>
 </head>
 <body>
@@ -350,9 +349,9 @@
 
             <h1 id="petName"></h1>
             <div class="pet-image" id="petImage"></div>
-            <div class="camera-btn-container">
-                <label for="petCameraInput" class="camera-btn file-input-label">📸</label>
-                <input type="file" id="petCameraInput" accept="image/*" capture="environment" class="hidden-input">
+            <div class="pdp-input-container">
+                <label for="petPdpInput" class="file-input-label">📸 Pet Picture</label>
+                <input type="file" id="petPdpInput" accept="image/*" capture="environment" class="hidden-input">
             </div>
             <div class="stats-container">
                 <div class="stat">
@@ -434,6 +433,12 @@
         let userProfiles = defaultUserProfiles;
         let activePetName = 'Blanka';
 
+        // Base64 data URLs for default images. Replace these with your actual image data.
+        const NAWOURA_DEFAULT_PDP = `data:image/jpeg;base64,...`; // Placeholder for Nawoura's profile image
+        const FAHOUD_DEFAULT_PDP = `data:image/jpeg;base64,...`; // Placeholder for Fahoud's profile image
+        const BLANKA_DEFAULT_PET_PDP = `data:image/jpeg;base64,...`; // Placeholder for Blanka's pet image
+        const SHADOW_DEFAULT_PET_PDP = `data:image/jpeg;base64,...`; // Placeholder for Shadow's pet image
+        
         const profileScreen = document.getElementById('profileScreen');
         const petApp = document.getElementById('petApp'); 
         const otherProfileScreen = document.getElementById('otherProfileScreen');
@@ -458,7 +463,7 @@
         const visitOtherProfileBtn = document.getElementById('visitOtherProfileBtn');
         const otherUserLogoEl = document.getElementById('otherUserLogo');
         const pdpFileInput = document.getElementById('pdpFileInput');
-        const petCameraInput = document.getElementById('petCameraInput');
+        const petPdpInput = document.getElementById('petPdpInput');
         const backToPetAppBtn = document.getElementById('backToPetAppBtn');
         const otherUserNameEl = document.getElementById('otherUserName');
         const otherUserPdpEl = document.getElementById('otherUserPdp');
@@ -511,8 +516,8 @@
                 nawouraProfilePdpEl.style.backgroundImage = `url(${userProfiles['Nawoura'].pdp})`;
                 nawouraProfilePdpEl.textContent = '';
             } else {
-                 nawouraProfilePdpEl.style.backgroundImage = 'none';
-                 nawouraProfilePdpEl.textContent = userProfiles['Nawoura'].logo;
+                nawouraProfilePdpEl.style.backgroundImage = 'none';
+                nawouraProfilePdpEl.textContent = userProfiles['Nawoura'].logo;
             }
             if (userProfiles['Fahoud'].pdp) {
                 fahoudProfilePdpEl.style.backgroundImage = `url(${userProfiles['Fahoud'].pdp})`;
@@ -549,8 +554,26 @@
             nawouraProfileBtn.disabled = true;
             fahoudProfileBtn.disabled = true;
         };
+        
+        // This function now uses specific dot notation to update only the changed field.
+        const updateUserFieldInFirestore = async (field, value) => {
+            if (!petsDocRef || !activeUser) {
+                console.error("petsDocRef or activeUser not initialized.");
+                showMessage(statusMessageEl, 'App is not ready. Please wait.');
+                return;
+            }
+            try {
+                const updates = {};
+                updates[`users.${activeUser}.${field}`] = value;
+                await updateDoc(petsDocRef, updates);
+            } catch (error) {
+                console.error("Error updating user data:", error);
+                showMessage(statusMessageEl, 'Failed to save changes. Please try again.');
+            }
+        };
 
-        const saveStateToFirestore = async (updates) => {
+        // This function now uses specific dot notation to update only the changed pet stats.
+        const updatePetStatsInFirestore = async (updates) => {
             if (!petsDocRef) {
                 console.error("petsDocRef is not initialized.");
                 showMessage(statusMessageEl, 'App is not ready. Please wait.');
@@ -559,7 +582,7 @@
             try {
                 await updateDoc(petsDocRef, updates);
             } catch (error) {
-                console.error("Error updating state:", error);
+                console.error("Error updating pet stats:", error);
                 showMessage(statusMessageEl, 'Failed to save changes. Please try again.');
             }
         };
@@ -567,8 +590,7 @@
         const updateUserPoints = (pointsToAdd) => {
             if (activeUser && userProfiles[activeUser]) {
                 const newPoints = userProfiles[activeUser].points + pointsToAdd;
-                const updatedUsers = { ...userProfiles, [activeUser]: { ...userProfiles[activeUser], points: newPoints } };
-                saveStateToFirestore({ users: updatedUsers });
+                updateUserFieldInFirestore('points', newPoints);
             }
         };
 
@@ -598,7 +620,12 @@
             const newHappiness = Math.min(100, currentPet.happiness + happinessChange);
             const newHunger = Math.min(100, currentPet.hunger + hungerChange);
             
-            saveStateToFirestore({ [activePetName]: { ...currentPet, happiness: newHappiness, hunger: newHunger } });
+            const updates = {
+              [`${activePetName}.happiness`]: newHappiness,
+              [`${activePetName}.hunger`]: newHunger
+            };
+            
+            updatePetStatsInFirestore(updates);
             updateUserPoints(pointsToAdd);
             showMessage(statusMessageEl, message);
         };
@@ -615,8 +642,7 @@
             const reader = new FileReader();
             reader.onload = (e) => {
                 const pdpDataUrl = e.target.result;
-                const updatedUsers = { ...userProfiles, [activeUser]: { ...userProfiles[activeUser], pdp: pdpDataUrl } };
-                saveStateToFirestore({ users: updatedUsers });
+                updateUserFieldInFirestore('pdp', pdpDataUrl);
                 showMessage(statusMessageEl, 'Profile picture saved!');
             };
             reader.readAsDataURL(file);
@@ -637,8 +663,7 @@
             const reader = new FileReader();
             reader.onload = (e) => {
                 const petPdpDataUrl = e.target.result;
-                const updatedPet = { ...petStates[activePetName], pdp: petPdpDataUrl };
-                saveStateToFirestore({ [activePetName]: updatedPet });
+                updatePetStatsInFirestore({ [`${activePetName}.pdp`]: petPdpDataUrl });
                 showMessage(statusMessageEl, `${petStates[activePetName].name}'s picture updated!`);
             };
             reader.readAsDataURL(file);
@@ -671,12 +696,19 @@
                     try {
                         if (docSnap.exists()) {
                             const data = docSnap.data();
-                            petStates['Blanka'] = data['Blanka'];
-                            petStates['Shadow'] = data['Shadow'];
-                            userProfiles = { ...defaultUserProfiles, ...data.users };
+                            Object.assign(petStates['Blanka'], data['Blanka']);
+                            Object.assign(petStates['Shadow'], data['Shadow']);
+                            Object.assign(userProfiles, data.users);
                         } else {
-                            await setDoc(petsDocRef, { Blanka: petStates.Blanka, Shadow: petStates.Shadow, users: defaultUserProfiles });
-                            Object.assign(userProfiles, defaultUserProfiles);
+                            // Initialize with default values if the document doesn't exist
+                            await setDoc(petsDocRef, {
+                                Blanka: { ...petStates.Blanka, pdp: BLANKA_DEFAULT_PET_PDP },
+                                Shadow: { ...petStates.Shadow, pdp: SHADOW_DEFAULT_PET_PDP },
+                                users: {
+                                    Nawoura: { ...defaultUserProfiles.Nawoura, pdp: NAWOURA_DEFAULT_PDP },
+                                    Fahoud: { ...defaultUserProfiles.Fahoud, pdp: FAHOUD_DEFAULT_PDP }
+                                }
+                            });
                         }
                         updateUI();
                     } catch (error) {
@@ -735,7 +767,7 @@
         feedBtn.addEventListener('click', () => updatePetStats('feed'));
         playBtn.addEventListener('click', () => updatePetStats('play'));
         pdpFileInput.addEventListener('change', handlePdpFile);
-        petCameraInput.addEventListener('change', handlePetPdpFile);
+        petPdpInput.addEventListener('change', handlePetPdpFile);
         
         selectBlankaBtn.addEventListener('click', () => { activePetName = 'Blanka'; updateUI(); showMessage(statusMessageEl, 'Switched to Blanka!'); });
         selectShadowBtn.addEventListener('click', () => { activePetName = 'Shadow'; updateUI(); showMessage(statusMessageEl, 'Switched to Shadow!'); });
